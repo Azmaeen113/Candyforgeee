@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import { FaCheck } from "react-icons/fa";
 import { HiMiniXMark } from "react-icons/hi2";
-import Button from "./ui/Button";
 import { mainLogo } from "../images";
 import { useUser } from "../UserContext";
 
