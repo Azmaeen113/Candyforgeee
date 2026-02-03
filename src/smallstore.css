@@ -1,0 +1,111 @@
+
+.start-store-overlay {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 10000;
+    background: rgba(26, 11, 46, 0.8);
+    backdrop-filter: blur(10px);
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+}
+
+.start-store-container {
+    width: 100%;
+    max-width: 500px;
+    height: 100%;
+    background: linear-gradient(180deg, #2D1B4E 0%, #1A0B2E 100%);
+    border-radius: 20px 20px 0 0;
+    padding: 20px;
+    box-shadow: 0 -4px 30px rgba(0, 245, 255, 0.2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    border: 1px solid rgba(0, 245, 255, 0.2);
+    border-bottom: none;
+}
+
+.start-store-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.back-arrow {
+    color: #00F5FF;
+    font-size: 24px;
+    cursor: pointer;
+    margin-right: 10px;
+}
+
+.store-title {
+    color: #fff;
+    font-size: 18px;
+    font-weight: bold;
+    background: linear-gradient(135deg, #00F5FF, #FF10F0);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.reward-card {
+    background: rgba(45, 27, 78, 0.6);
+    backdrop-filter: blur(20px);
+    width: 100%;
+    padding: 15px;
+    border-radius: 15px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(0, 245, 255, 0.2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.reward-image {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    border-radius: 10px;
+    margin-bottom: 15px;
+}
+
+.reward-text {
+    color: #FFE500;
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.buy-button {
+    background: linear-gradient(135deg, #00F5FF 0%, #FF10F0 50%, #B026FF 100%);
+    color: #ffffff;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 30px rgba(255, 16, 240, 0.4);
+}
+
+.buy-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 35px rgba(255, 16, 240, 0.5);
+}
+
+.message-box {
+    background: rgba(45, 27, 78, 0.8);
+    color: #fff;
+    padding: 10px;
+    border-radius: 10px;
+    margin-top: 20px;
+    text-align: center;
+    font-weight: bold;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(0, 245, 255, 0.2);
+}
