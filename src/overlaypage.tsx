@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useUser } from "./UserContext";
 import { mainLogo } from "./images";
 import checkboxImage from "./images/check.png";
+import { getCreationMonthCount, updateUser } from "./firebase/services";
 
 interface OverlayPageProps {
   closeOverlay: () => void;
@@ -31,45 +32,23 @@ const OverlayPage: React.FC<OverlayPageProps> = ({
     }
     isFetching.current = true;
     try {
-      const initData = window.Telegram?.WebApp?.initData || "";
-      if (!initData) {
-        console.error("Telegram initData is missing");
-        return;
-      }
+      // Get months since account creation from Firebase
+      const months = await getCreationMonthCount(userID);
+      const years = Math.max(1, Math.floor(months / 12));
+      
+      setYearsAgo(years);
+      setIsDataFetched(true);
 
-      const url = `https://frontend.goldenfrog.live/get_creation_month_count?userid=${userID}`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Telegram-Init-Data": initData
-        }
-      });
+      // Calculate reward based on account age
+      const baseReward = years * 100; // 100 per year
+      const additionalReward = isStar ? 250 : 0;
+      const totalCalculatedReward = baseReward + additionalReward;
 
-      if (response.ok) {
-        const data = await response.json();
-        setYearsAgo(data.years);
-        setIsDataFetched(true);
+      setTotalReward(totalCalculatedReward);
+      setPoints(() => totalCalculatedReward);
 
-        const additionalReward = isStar ? 250 : 0;
-        const totalCalculatedReward = data.reward + additionalReward;
-
-        setTotalReward(totalCalculatedReward);
-        setPoints(() => totalCalculatedReward);
-
-        // Update user's totalgot
-        await fetch("https://frontend.goldenfrog.live/update_user", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-Init-Data": initData
-          },
-          body: JSON.stringify({
-            UserId: userID,
-            totalgot: totalCalculatedReward
-          })
-        });
-      }
+      // Update user's coins in Firebase
+      await updateUser(userID, { coins: totalCalculatedReward });
     } catch (error) {
       const err = error as any;
       console.error("API call error:", err.message);

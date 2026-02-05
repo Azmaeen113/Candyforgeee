@@ -4,6 +4,7 @@ import { useUser } from "../UserContext";
 import { dailyReward, mainLogo } from "../images";
 import { FaGamepad } from "react-icons/fa";
 import GameModal from "./GameModal";
+import { updateDailyTapLimit } from "../firebase/services";
 
 interface TapEffect {
   id: number;
@@ -26,24 +27,13 @@ export default function TapSection({ toggleDailyLogin }: TapSectionProps) {
 
   // fire‑and‑forget write‑through so UI stays instant
   const sendTapToBackend = async (
-    newPoints: number,
+    _newPoints: number,
     newClaimedTotal: number
   ) => {
     if (!userID) return;
-    const initData = window.Telegram?.WebApp?.initData ?? "";
     try {
-      await fetch("https://frontend.goldenfrog.live/update_user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Telegram-Init-Data": initData
-        },
-        body: JSON.stringify({
-          UserId: userID,
-          totalgot: newPoints,
-          claimedtotal: newClaimedTotal
-        })
-      });
+      await updateDailyTapLimit(userID, newClaimedTotal);
+      // Points are already being saved via UserContext addPoints
     } catch (err) {
       console.error("Tap sync failed:", err);
     }

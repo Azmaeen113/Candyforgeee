@@ -13,6 +13,7 @@ import {
   FaExternalLinkAlt,
   FaInfoCircle
 } from "react-icons/fa";
+import { getUserById, updateWalletAddress } from "./firebase/services";
 
 interface AirdropProps {}
 
@@ -30,25 +31,14 @@ const Airdrop: React.FC<AirdropProps> = () => {
       if (!userID) return;
       setIsLoading(true);
       try {
-        const initData = window.Telegram.WebApp.initData || "";
-        const response = await fetch(
-          `https://frontend.goldenfrog.live/get_user?UserId=${userID}`,
-          {
-            headers: {
-              "X-Telegram-Init-Data": initData
-            }
+        const user = await getUserById(userID);
+        
+        if (user) {
+          if (user.walletAddress) {
+            setWalletAddress(user.walletAddress);
           }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.data) {
-            if (data.data.walletid) {
-              setWalletAddress(data.data.walletid);
-            }
-            if (data.data.totalcollectabledaily !== undefined) {
-              setTrd(parseInt(data.data.totalcollectabledaily) || 0);
-            }
+          if (user.claimedtotal !== undefined) {
+            setTrd(user.claimedtotal || 0);
           }
         }
         setIsLoading(false);
@@ -71,30 +61,12 @@ const Airdrop: React.FC<AirdropProps> = () => {
     }
 
     try {
-      const initData = window.Telegram.WebApp.initData || "";
-      const response = await fetch(
-        "https://frontend.goldenfrog.live/update_user",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-Init-Data": initData
-          },
-          body: JSON.stringify({
-            UserId: userID,
-            walletid: newWalletAddress.trim()
-          })
-        }
-      );
-
-      if (response.ok) {
-        setWalletAddress(newWalletAddress.trim());
-        setNewWalletAddress("");
-        setShowSetWalletModal(false);
-        setModalMessage("Wallet address saved successfully!");
-      } else {
-        throw new Error("Failed to save wallet address");
-      }
+      await updateWalletAddress(userID, newWalletAddress.trim());
+      
+      setWalletAddress(newWalletAddress.trim());
+      setNewWalletAddress("");
+      setShowSetWalletModal(false);
+      setModalMessage("Wallet address saved successfully!");
     } catch (error) {
       console.error("Error saving wallet address:", error);
       setModalMessage("Failed to save wallet address. Please try again.");

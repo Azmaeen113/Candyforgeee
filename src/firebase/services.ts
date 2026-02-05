@@ -12,7 +12,8 @@ import {
   addDoc,
   serverTimestamp,
   increment,
-  Timestamp
+  Timestamp,
+  getCountFromServer
 } from "firebase/firestore";
 import { db } from "./config";
 
@@ -37,6 +38,13 @@ export interface FirebaseUser {
   dailyRewardDay: number;
   lastDailyReward: Timestamp | null;
   tasksCompleted: string[];
+  // Additional fields from old API
+  claimedtotal: number;
+  dailycombotime: number;
+  referrewarded: number;
+  walletAddress: string | null;
+  hookspeedtime: number;
+  startime: number | null;
 }
 
 // Get or create user by Telegram ID
@@ -46,7 +54,7 @@ export async function getOrCreateUser(telegramUser: {
   last_name?: string;
   username?: string;
   photo_url?: string;
-}): Promise<FirebaseUser> {
+}, invitedBy?: string | null): Promise<FirebaseUser> {
   const odlId = String(telegramUser.id);
   const userRef = doc(db, "users", odlId);
   const userSnap = await getDoc(userRef);
@@ -77,15 +85,33 @@ export async function getOrCreateUser(telegramUser: {
     maxEnergy: 500,
     lastEnergyUpdate: serverTimestamp(),
     referralCode: generateReferralCode(odlId),
-    referredBy: null,
+    referredBy: invitedBy || null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     dailyRewardDay: 0,
     lastDailyReward: null,
-    tasksCompleted: []
+    tasksCompleted: [],
+    claimedtotal: 0,
+    dailycombotime: 0,
+    referrewarded: 0,
+    walletAddress: null,
+    hookspeedtime: 1,
+    startime: null
   };
 
   await setDoc(userRef, newUser);
+  
+  // If invited by someone, give both users bonus
+  if (invitedBy && invitedBy !== odlId) {
+    const referrerRef = doc(db, "users", invitedBy);
+    const referrerSnap = await getDoc(referrerRef);
+    if (referrerSnap.exists()) {
+      await updateDoc(referrerRef, {
+        coins: increment(1000), // Bonus for referring
+        updatedAt: serverTimestamp()
+      });
+    }
+  }
   
   // Fetch the created user
   const createdUserSnap = await getDoc(userRef);
@@ -362,4 +388,244 @@ function generateReferralCode(odlId: string): string {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return `CF${code}${odlId.slice(-3)}`;
+}
+
+// ==================== ADDITIONAL USER SERVICES ====================
+
+// Update user data (generic update)
+export async function updateUser(odlId: string, data: Partial<FirebaseUser>): Promise<void> {
+  const userRef = doc(db, "users", odlId);
+  await updateDoc(userRef, {
+    ...data,
+    updatedAt: serverTimestamp()
+  });
+}
+
+// Update wallet address
+export async function updateWalletAddress(odlId: string, walletAddress: string): Promise<void> {
+  const userRef = doc(db, "users", odlId);
+  await updateDoc(userRef, {
+    walletAddress,
+    updatedAt: serverTimestamp()
+  });
+}
+
+// Update daily tap limit
+export async function updateDailyTapLimit(odlId: string, claimedtotal: number, dailycombotime?: number): Promise<void> {
+  const userRef = doc(db, "users", odlId);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updateData: { [key: string]: any } = {
+    claimedtotal,
+    updatedAt: serverTimestamp()
+  };
+  if (dailycombotime !== undefined) {
+    updateData.dailycombotime = dailycombotime;
+  }
+  await updateDoc(userRef, updateData);
+}
+
+// Reset daily limit
+export async function resetDailyLimit(odlId: string): Promise<void> {
+  const userRef = doc(db, "users", odlId);
+  await updateDoc(userRef, {
+    claimedtotal: 0,
+    dailycombotime: Math.floor(Date.now() / 1000),
+    updatedAt: serverTimestamp()
+  });
+}
+
+// Update referral rewarded count
+export async function updateReferrewarded(odlId: string, count: number): Promise<void> {
+  const userRef = doc(db, "users", odlId);
+  await updateDoc(userRef, {
+    referrewarded: count,
+    updatedAt: serverTimestamp()
+  });
+}
+
+// Get invitations (friends who used this user's referral)
+export async function getInvitations(odlId: string): Promise<{ invitations: FirebaseUser[], referrewarded: number }> {
+  const usersRef = collection(db, "users");
+  const q = query(usersRef, where("referredBy", "==", odlId));
+  const snapshot = await getDocs(q);
+  
+  const user = await getUserById(odlId);
+  
+  return {
+    invitations: snapshot.docs.map(doc => doc.data() as FirebaseUser),
+    referrewarded: user?.referrewarded || 0
+  };
+}
+
+// Get total user count
+export async function getTotalUserCount(): Promise<number> {
+  const usersRef = collection(db, "users");
+  const snapshot = await getCountFromServer(usersRef);
+  return snapshot.data().count;
+}
+
+// Get account creation month count (for overlay page)
+export async function getCreationMonthCount(odlId: string): Promise<number> {
+  const user = await getUserById(odlId);
+  if (!user || !user.createdAt) return 0;
+  
+  const createdDate = user.createdAt.toDate();
+  const now = new Date();
+  const months = (now.getFullYear() - createdDate.getFullYear()) * 12 + (now.getMonth() - createdDate.getMonth());
+  return Math.max(0, months);
+}
+
+// ==================== DAILY REWARD / GAMER SERVICES ====================
+
+// Get gamer data (for daily reward check)
+export async function getGamerData(odlId: string): Promise<{ startime: number | null, hookspeedtime: number }> {
+  const user = await getUserById(odlId);
+  return {
+    startime: user?.startime || null,
+    hookspeedtime: user?.hookspeedtime || 1
+  };
+}
+
+// Update gamer startime
+export async function updateGamerStartime(odlId: string): Promise<void> {
+  const userRef = doc(db, "users", odlId);
+  await updateDoc(userRef, {
+    startime: Math.floor(Date.now() / 1000),
+    updatedAt: serverTimestamp()
+  });
+}
+
+// Claim daily reward (returns reward amount or null if already claimed)
+export async function claimDailyRewardFirebase(odlId: string): Promise<{ reward: number, newTotal: number } | null> {
+  const userRef = doc(db, "users", odlId);
+  const userSnap = await getDoc(userRef);
+  
+  if (!userSnap.exists()) return null;
+  
+  const userData = userSnap.data() as FirebaseUser;
+  const now = Math.floor(Date.now() / 1000);
+  const startime = userData.startime;
+  
+  // Check if already claimed today
+  if (startime) {
+    const lastClaimDate = new Date(startime * 1000);
+    const today = new Date(now * 1000);
+    if (
+      lastClaimDate.getDate() === today.getDate() &&
+      lastClaimDate.getMonth() === today.getMonth() &&
+      lastClaimDate.getFullYear() === today.getFullYear()
+    ) {
+      return null; // Already claimed today
+    }
+  }
+  
+  const hookspeedtime = userData.hookspeedtime || 1;
+  const reward = 50 * hookspeedtime;
+  const newTotal = (userData.coins || 0) + reward;
+  
+  await updateDoc(userRef, {
+    coins: newTotal,
+    startime: now,
+    updatedAt: serverTimestamp()
+  });
+  
+  // Log transaction
+  await addTransaction({
+    odl_id: odlId,
+    type: "reward",
+    amount: reward,
+    description: "Daily reward claimed",
+    status: "completed"
+  });
+  
+  return { reward, newTotal };
+}
+
+// Increase total coins (totalgot)
+export async function increaseCoins(odlId: string, amount: number): Promise<number> {
+  const userRef = doc(db, "users", odlId);
+  await updateDoc(userRef, {
+    coins: increment(amount),
+    updatedAt: serverTimestamp()
+  });
+  
+  // Get updated total
+  const userSnap = await getDoc(userRef);
+  const userData = userSnap.data() as FirebaseUser;
+  return userData.coins;
+}
+
+// ==================== TASK SERVICES (ENHANCED) ====================
+
+// Check if task is completed
+export async function isTaskCompleted(odlId: string, taskId: string): Promise<boolean> {
+  const user = await getUserById(odlId);
+  return user?.tasksCompleted?.includes(taskId) || false;
+}
+
+// Mark task as done (for Telegram verification tasks)
+export async function markTaskDone(odlId: string, taskId: string): Promise<boolean> {
+  const user = await getUserById(odlId);
+  if (!user) return false;
+  
+  if (user.tasksCompleted?.includes(taskId)) {
+    return false; // Already done
+  }
+  
+  const userRef = doc(db, "users", odlId);
+  await updateDoc(userRef, {
+    tasksCompleted: [...(user.tasksCompleted || []), taskId],
+    updatedAt: serverTimestamp()
+  });
+  
+  return true;
+}
+
+// Complete task and add reward
+export async function completeTaskWithReward(odlId: string, taskId: string, reward: number): Promise<{ success: boolean, newTotal: number }> {
+  const user = await getUserById(odlId);
+  if (!user) return { success: false, newTotal: 0 };
+  
+  if (user.tasksCompleted?.includes(taskId)) {
+    return { success: false, newTotal: user.coins };
+  }
+  
+  const newTotal = (user.coins || 0) + reward;
+  
+  const userRef = doc(db, "users", odlId);
+  await updateDoc(userRef, {
+    tasksCompleted: [...(user.tasksCompleted || []), taskId],
+    coins: newTotal,
+    updatedAt: serverTimestamp()
+  });
+  
+  // Log transaction
+  await addTransaction({
+    odl_id: odlId,
+    type: "task",
+    amount: reward,
+    description: `Task completed: ${taskId}`,
+    status: "completed"
+  });
+  
+  return { success: true, newTotal };
+}
+
+// Get all task statuses for a user
+export async function getTaskStatuses(odlId: string): Promise<{ [key: string]: "completed" | "not_started" }> {
+  const user = await getUserById(odlId);
+  const completedTasks = user?.tasksCompleted || [];
+  
+  const taskIds = [
+    "task1", "task2", "task7", "task10", "task11", "task12",
+    "task14", "task15", "task16", "task17", "task18", "task19",
+    "task20", "task21", "task22"
+  ];
+  
+  const statuses: { [key: string]: "completed" | "not_started" } = {};
+  taskIds.forEach(taskId => {
+    statuses[taskId] = completedTasks.includes(taskId) ? "completed" : "not_started";
+  });
+  
+  return statuses;
 }

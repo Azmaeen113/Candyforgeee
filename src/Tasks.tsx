@@ -7,6 +7,10 @@ import { TfiGift } from "react-icons/tfi";
 import { useUser } from "./UserContext";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import Modal from "./Modal";
+import { 
+  completeTaskWithReward, 
+  getInvitations
+} from "./firebase/services";
 
 
 // Declare the Moneteg SDK function globally
@@ -166,17 +170,15 @@ interface TasksPageProps {
 
 const TasksPage: React.FC<TasksPageProps> = ({
   taskStatus,
-  setTaskStatus,
-  refertotal,
-  setRefertotal
+  setTaskStatus
+  // refertotal and setRefertotal are received but handled via Firebase
 }) => {
   const { setPoints, userID } = useUser();
   const [tonConnectUI] = useTonConnectUI();
   const address = useTonAddress();
 
   const [modalMessage, setModalMessage] = useState<string | null>(null);
-  // State for fetched tasks
-  const [fetchedTasks, setFetchedTasks] = useState<any[]>([]);
+  // Removed: fetchedTasks state (dynamic tasks now come from Firebase if needed)
 
   // New state to track if wallet connection is being initiated for a specific task
   const [connectingForTask, setConnectingForTask] = useState<string | null>(
@@ -190,113 +192,30 @@ const TasksPage: React.FC<TasksPageProps> = ({
 
   const closeModal = () => setModalMessage(null);
 
-  // Function to extract chat ID from a Telegram link
-  const extractChatId = (link: string): string => {
-    const parts = link.split("/");
-    const lastPart = parts[parts.length - 1];
-    return "@" + lastPart;
-  };
+  // Note: Dynamic tasks from external API have been removed.
+  // All tasks are now hardcoded below. 
+  // If you want to add dynamic tasks, create a "tasks" collection in Firebase.
 
-  // Effect to fetch tasks from the backend
-  useEffect(() => {
-    const fetchTasks = async () => {
-      const initData = window.Telegram.WebApp.initData || "";
-
-      try {
-        const response = await fetch(
-          `https://frontend.goldenfrog.live/get_user_tasks?userid=${userID}`,
-          {
-            headers: {
-              "X-Telegram-Init-Data": initData
-            }
-          }
-        );
-        if (!response.ok) {
-          throw new Error(`Failed to fetch tasks: ${response.status}`);
-        }
-
-        const data = await response.json();
-        if (data) {
-          if (data.task_details) {
-            setFetchedTasks(data.task_details);
-          }
-
-          // Handle completed tasks
-          let completedTasks: number[] = [];
-          if (data.completed_tasks) {
-            if (Array.isArray(data.completed_tasks)) {
-              completedTasks = data.completed_tasks.map((id: any) =>
-                parseInt(id, 10)
-              );
-            } else if (typeof data.completed_tasks === "string") {
-              completedTasks = data.completed_tasks
-                .split(",")
-                .map((id: string) => parseInt(id, 10))
-                .filter((id: number) => !isNaN(id));
-            } else if (typeof data.completed_tasks === "number") {
-              completedTasks = [data.completed_tasks];
-            }
-          }
-
-          // Initialize task status for fetched tasks
-          const newTaskStatus: { [key: string]: "not_started" | "completed" } =
-            {};
-          data.task_details.forEach((task: any) => {
-            newTaskStatus[task.taskid.toString()] = completedTasks.includes(
-              task.taskid
-            )
-              ? "completed"
-              : "not_started";
-          });
-
-          setTaskStatus((prevStatus) => ({
-            ...prevStatus,
-            ...newTaskStatus
-          }));
-        }
-      } catch (error) {
-        console.error("Failed to fetch tasks:", error);
-        showAlert("Failed to fetch tasks. Please check your connection.");
-      }
-    };
-
-    if (userID) {
-      fetchTasks();
-    }
-  }, [userID]);
-
-  // Function to mark task as completed and reward points
+  // Function to mark task as completed and reward points (Firebase)
   const saveTaskCompletion = async (
     taskKey: string,
-    column: string,
+    _column: string,
     reward: number
   ) => {
-    const initData = window.Telegram.WebApp.initData || "";
-
     try {
-      const response = await fetch(
-        "https://frontend.goldenfrog.live/update_user",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-Init-Data": initData
-          },
-          body: JSON.stringify({ UserId: userID, [column]: "Done" })
-        }
-      );
+      const result = await completeTaskWithReward(userID, taskKey, reward);
 
-      if (!response.ok) {
-        throw new Error(`Failed to update task: ${response.status}`);
+      if (result.success) {
+        setTaskStatus((prevState) => ({
+          ...prevState,
+          [taskKey]: "completed"
+        }));
+
+        setPoints(result.newTotal);
+        showAlert(`Thank you! You have earned ${reward} CANDY.`);
+      } else {
+        showAlert("Task already completed.");
       }
-
-      setTaskStatus((prevState) => ({
-        ...prevState,
-        [taskKey]: "completed"
-      }));
-
-      setPoints((prevPoints) => prevPoints + reward);
-      showAlert(`Thank you! You have earned ${reward} ATM.`);
     } catch (error) {
       console.error(`Failed to complete task ${taskKey}:`, error);
       showAlert(
@@ -313,55 +232,40 @@ const TasksPage: React.FC<TasksPageProps> = ({
    */
   const handleInviteFriendsClick = async (
     taskKey: string,
-    column: string,
+    _column: string,
     reward: number,
     requiredFriends: number
   ) => {
-    if (refertotal < requiredFriends) {
-      showAlert("Not Enough Friends");
+    // First check actual friend count from Firebase
+    const data = await getInvitations(userID);
+    const actualFriendCount = data.invitations.length;
+    
+    if (actualFriendCount < requiredFriends) {
+      showAlert(`Not Enough Friends. You have ${actualFriendCount}, need ${requiredFriends}.`);
       return;
     }
 
-    const initData = window.Telegram.WebApp.initData || "";
-
     try {
-      // Update task status in the backend
-      const response = await fetch(
-        "https://frontend.goldenfrog.live/update_user",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-Init-Data": initData
-          },
-          body: JSON.stringify({ UserId: userID, [column]: "Done" })
-        }
-      );
+      const result = await completeTaskWithReward(userID, taskKey, reward);
 
-      if (!response.ok) {
-        throw new Error(`Failed to update task: ${response.status}`);
+      if (result.success) {
+        // Update task status locally
+        setTaskStatus((prevState) => ({
+          ...prevState,
+          [taskKey]: "completed"
+        }));
+
+        // Reward points
+        setPoints(result.newTotal);
+
+        showAlert(
+          `Congratulations! You have completed the Invite ${requiredFriends} Friend${
+            requiredFriends > 1 ? "s" : ""
+          } task and earned ${reward} CANDY.`
+        );
+      } else {
+        showAlert("Task already completed.");
       }
-
-      // Update task status locally
-      setTaskStatus((prevState) => ({
-        ...prevState,
-        [taskKey]: "completed"
-      }));
-
-      // Reward points
-      setPoints((prevPoints) => prevPoints + reward);
-
-      // Optionally, update refertotal if needed
-      // Here, you might want to subtract the requiredFriends from refertotal
-      // to prevent multiple claims for the same friends.
-      // Adjust this logic based on your application's requirements.
-      setRefertotal((prev) => prev - requiredFriends); // Deduct the required friends from refertotal
-
-      showAlert(
-        `Congratulations! You have completed the Invite ${requiredFriends} Friend${
-          requiredFriends > 1 ? "s" : ""
-        } task and earned ${reward} ATM.`
-      );
     } catch (error) {
       console.error(`Failed to complete ${taskKey} task:`, error);
       showAlert(
@@ -371,51 +275,23 @@ const TasksPage: React.FC<TasksPageProps> = ({
   };
 
   // Function to handle Telegram-related tasks (e.g., joining a channel)
+  // Note: Since we can't verify Telegram membership without a backend server,
+  // we'll trust the user clicked the link and make it claimable after a delay
   const handleTelegramTaskClick = async (taskKey: string, link: string) => {
     window.open(link, "_blank");
-
-    const chatId = extractChatId(link);
-    const userId = userID;
 
     setTaskStatus((prevState) => ({
       ...prevState,
       [taskKey]: "loading"
     }));
 
+    // After a delay, make the task claimable
+    // In a production app, you'd verify membership via your backend
     setTimeout(async () => {
-      const initData = window.Telegram.WebApp.initData || "";
-
-      try {
-        const response = await fetch(
-          `https://frontend.goldenfrog.live/check_telegram_status?user_id=${userId}&chat_id=${chatId}`,
-          {
-            headers: {
-              "X-Telegram-Init-Data": initData
-            }
-          }
-        );
-        const data = await response.json();
-
-        if (data.status === "1") {
-          setTaskStatus((prevState) => ({
-            ...prevState,
-            [taskKey]: "claimable"
-          }));
-        } else {
-          setTaskStatus((prevState) => ({
-            ...prevState,
-            [taskKey]: "not_started"
-          }));
-          showAlert("Not found, please try again.");
-        }
-      } catch (error) {
-        console.error("Error checking Telegram status:", error);
-        setTaskStatus((prevState) => ({
-          ...prevState,
-          [taskKey]: "not_started"
-        }));
-        showAlert("An error occurred. Please try again.");
-      }
+      setTaskStatus((prevState) => ({
+        ...prevState,
+        [taskKey]: "claimable"
+      }));
     }, 6000); // 6 seconds delay
   };
 
@@ -439,41 +315,28 @@ const TasksPage: React.FC<TasksPageProps> = ({
     }, 5000); // 5 seconds delay
   };
 
-  // Function to handle claiming a task's reward
+  // Function to handle claiming a task's reward (Firebase)
   const handleTaskClaim = async (
     taskKey: string,
-    column: string,
+    _column: string,
     reward: number
   ) => {
-    const initData = window.Telegram.WebApp.initData || "";
-
     try {
-      // Update task status in the backend
-      const response = await fetch(
-        "https://frontend.goldenfrog.live/update_user",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-Init-Data": initData
-          },
-          body: JSON.stringify({ UserId: userID, [column]: "Done" })
-        }
-      );
+      const result = await completeTaskWithReward(userID, taskKey, reward);
 
-      if (!response.ok) {
-        throw new Error(`Failed to update task: ${response.status}`);
+      if (result.success) {
+        // Update task status locally
+        setTaskStatus((prevState) => ({
+          ...prevState,
+          [taskKey]: "completed"
+        }));
+
+        // Reward points
+        setPoints(result.newTotal);
+        showAlert(`Congratulations! You have earned ${reward} CANDY.`);
+      } else {
+        showAlert("Task already completed.");
       }
-
-      // Update task status locally
-      setTaskStatus((prevState) => ({
-        ...prevState,
-        [taskKey]: "completed"
-      }));
-
-      // Reward points
-      setPoints((prevPoints) => prevPoints + reward);
-      showAlert(`Congratulations! You have earned ${reward} ATM.`);
     } catch (error) {
       console.error(`Failed to complete ${taskKey} task:`, error);
       showAlert(
@@ -498,125 +361,6 @@ const TasksPage: React.FC<TasksPageProps> = ({
       setConnectingForTask("task2"); // Set the task we're connecting for
       tonConnectUI.connectWallet(); // Trigger the wallet connection UI
       // The reward will be handled in the onStatusChange useEffect upon successful connection
-    }
-  };
-
-  // Function to handle fetched tasks (additional tasks)
-  const handleFetchedTaskClick = (task: any) => {
-    // Check if task is already completed
-    if (taskStatus[task.taskid.toString()] === "completed") {
-      return; // Do nothing if task is completed
-    }
-
-    // Use the link provided by the task to open in a new tab or default to "#"
-    const taskLink = task.tasklink || "#";
-    window.open(taskLink, "_blank");
-
-    // Set task status to "loading"
-    setTaskStatus((prevState) => ({
-      ...prevState,
-      [task.taskid.toString()]: "loading"
-    }));
-
-    // Simulate an asynchronous operation to make the task claimable
-    setTimeout(() => {
-      setTaskStatus((prevState) => ({
-        ...prevState,
-        [task.taskid.toString()]: "claimable"
-      }));
-    }, 5000); // Adjust the delay as needed
-  };
-
-  // Function to handle claiming fetched tasks' rewards
-  const handleFetchedTaskClaim = async (task: any) => {
-    try {
-      const initData = window.Telegram.WebApp.initData || "";
-
-      // First API call: Mark task as done
-      const markDoneResponse = await fetch(
-        "https://frontend.goldenfrog.live/mark_task_done",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-Init-Data": initData
-          },
-          body: JSON.stringify({
-            userid: userID,
-            taskid: task.taskid
-          })
-        }
-      );
-
-      const markDoneData = await markDoneResponse.json();
-
-      if (!markDoneResponse.ok) {
-        console.log(
-          "Warning: Failed to mark task as done. Proceeding with increasing points."
-        );
-      } else if (
-        !markDoneData.success &&
-        markDoneData.message !== "Task marked as done for existing user" &&
-        markDoneData.message !== "Task already marked as done"
-      ) {
-        console.log(
-          "Warning: Task already marked as done or other non-critical issue."
-        );
-      }
-
-      // Second API call: Increase total points (totalgot)
-      const increasePointsResponse = await fetch(
-        "https://frontend.goldenfrog.live/increase_totalgot",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-Init-Data": initData
-          },
-          body: JSON.stringify({
-            UserId: userID,
-            Amount: task.taskreward
-          })
-        }
-      );
-
-      const increasePointsData = await increasePointsResponse.json();
-
-      if (
-        !increasePointsResponse.ok ||
-        !increasePointsData.totalgot ||
-        !increasePointsData.message.includes("Total got updated successfully")
-      ) {
-        throw new Error(
-          "Failed to increase points. Backend response indicates failure."
-        );
-      }
-
-      // Update task status to completed if successful
-      setTaskStatus((prevStatus) => ({
-        ...prevStatus,
-        [task.taskid.toString()]: "completed"
-      }));
-
-      // Update user's points
-      setPoints(increasePointsData.totalgot);
-
-      // Show success alert
-      showAlert(
-        `You have earned ${task.taskreward} ATM. Your total is now ${increasePointsData.totalgot} ATM.`
-      );
-    } catch (error) {
-      // Enhanced error message for debugging
-      console.error("Failed to claim task:", error);
-      showAlert(
-        "An error occurred while claiming the task. Please try again later."
-      );
-
-      // Set task status back to not started only if increasing points failed
-      setTaskStatus((prevStatus) => ({
-        ...prevStatus,
-        [task.taskid.toString()]: "not_started"
-      }));
     }
   };
 
@@ -662,7 +406,7 @@ const TasksPage: React.FC<TasksPageProps> = ({
             reward={1000}
             status={taskStatus["task1"] || "not_started"}
             onClick={() =>
-              handleTelegramTaskClick("task1", "https://t.me/atomiumgamearts")
+              handleTelegramTaskClick("task1", "https://t.me/candyforge")
             }
             onClaim={() => handleTaskClaim("task1", "task1", 1000)}
           />
@@ -673,7 +417,7 @@ const TasksPage: React.FC<TasksPageProps> = ({
             title="Follow on Twitter"
             reward={1000}
             status={taskStatus["task7"] || "not_started"}
-            onClick={() => handleTaskClick("task7", "https://x.com/Kevin1143765")}
+            onClick={() => handleTaskClick("task7", "https://x.com/candyforge")}
             onClaim={() => handleTaskClaim("task7", "task7", 1000)}
           />
 
@@ -686,7 +430,7 @@ const TasksPage: React.FC<TasksPageProps> = ({
             onClick={() =>
               handleTaskClick(
                 "task14",
-                "https://youtube.com/@atomium-game-arts?si=jV_vjxxmrdJV76lE"
+                "https://youtube.com/@candyforge"
               )
             }
             onClaim={() => handleTaskClaim("task14", "task14", 1000)}
@@ -701,7 +445,7 @@ const TasksPage: React.FC<TasksPageProps> = ({
             onClick={() =>
               handleTaskClick(
                 "task15",
-                "https://atomium-game-arts.com/"
+                "https://candyforge.io"
               )
             }
             onClaim={() => handleTaskClaim("task15", "task15", 1000)}
@@ -714,7 +458,7 @@ const TasksPage: React.FC<TasksPageProps> = ({
             reward={1000}
             status={taskStatus["task16"] || "not_started"}
             onClick={() =>
-              handleTaskClick("task16", "https://www.instagram.com/atomuim_game_arts?igsh=ZWR5MHJweG5ta2V3")
+              handleTaskClick("task16", "https://instagram.com/candyforge")
             }
             onClaim={() => handleTaskClaim("task16", "task16", 1000)}
           />
@@ -726,7 +470,7 @@ const TasksPage: React.FC<TasksPageProps> = ({
             reward={1000}
             status={taskStatus["task18"] || "not_started"}
             onClick={() =>
-              handleTaskClick("task18", "https://www.tiktok.com/@atomiumgamearts.c?_t=ZG-8xE2C5v7ytc&_r=1")
+              handleTaskClick("task18", "https://tiktok.com/@candyforge")
             }
             onClaim={() => handleTaskClaim("task18", "task18", 1000)}
           />
@@ -738,7 +482,7 @@ const TasksPage: React.FC<TasksPageProps> = ({
             reward={1000}
             status={taskStatus["task19"] || "not_started"}
             onClick={() =>
-              handleTaskClick("task19", "https://discord.gg/yW94dUBM")
+              handleTaskClick("task19", "https://discord.gg/candyforge")
             }
             onClaim={() => handleTaskClaim("task19", "task19", 1000)}
           />
@@ -791,33 +535,6 @@ const TasksPage: React.FC<TasksPageProps> = ({
             requiredFriends={10}
             onClaim={() => handleTaskClaim("task12", "task12", 10000)}
           />
-
-          {/* Divider for Dynamic Tasks */}
-          {fetchedTasks.length > 0 && (
-            <div className="relative py-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300"></div>
-              </div>
-              <div className="relative flex justify-center">
-                <span className="px-3 bg-white text-sm text-gray-500">
-                  Additional Tasks
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Dynamically Fetched Tasks */}
-          {fetchedTasks.map((task) => (
-            <TaskItem
-              key={task.taskid}
-              icon={task.taskimage} // Using task image as icon
-              title={task.tasktitle}
-              reward={task.taskreward}
-              status={taskStatus[task.taskid.toString()] || "not_started"}
-              onClick={() => handleFetchedTaskClick(task)}
-              onClaim={() => handleFetchedTaskClaim(task)}
-            />
-          ))}
         </div>
       </>
     );

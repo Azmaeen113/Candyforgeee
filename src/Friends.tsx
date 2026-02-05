@@ -22,6 +22,7 @@ import {
 } from "react-icons/fa6";
 import { HiOutlineChatBubbleBottomCenter } from "react-icons/hi2";
 import { LuLink } from "react-icons/lu";
+import { getInvitations, updateReferrewarded as updateReferrewardedFirebase, increaseCoins } from "./firebase/services";
 
 const FriendsPage: React.FC = () => {
   const { userID, setPoints } = useUser();
@@ -35,8 +36,8 @@ const FriendsPage: React.FC = () => {
   const [animateModal, setAnimateModal] = useState(false); // Animation trigger
   const [isLoading, setIsLoading] = useState(true);
 
-  // Invitation link
-  const invitationLink = `https://t.me/AUtomuiumbot/Automium?startapp=${encodeURIComponent(
+  // Invitation link - Update this to your Telegram bot when ready
+  const invitationLink = `https://t.me/CandyForgeBot/CandyForge?startapp=${encodeURIComponent(
     userID
   )}`;
 
@@ -135,19 +136,8 @@ const FriendsPage: React.FC = () => {
 
   // Function to update the `referrewarded` count
   const updateReferrewarded = async (newReferrewardedCount: number) => {
-    const initData = window.Telegram.WebApp.initData || "";
     try {
-      await fetch("https://frontend.goldenfrog.live/update_user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Telegram-Init-Data": initData,
-        },
-        body: JSON.stringify({
-          UserId: userID,
-          referrewarded: newReferrewardedCount.toString(),
-        }),
-      });
+      await updateReferrewardedFirebase(userID, newReferrewardedCount);
       console.log("referrewarded updated to", newReferrewardedCount);
     } catch (error) {
       console.error("Failed to update referrewarded:", error);
@@ -157,35 +147,30 @@ const FriendsPage: React.FC = () => {
   // Fetch friends logic
   const fetchFriends = async () => {
     setIsLoading(true);
-    const initData = window.Telegram.WebApp.initData || "";
     try {
-      const response = await fetch(
-        `https://frontend.goldenfrog.live/get_invitations?UserId=${userID}`,
-        {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            "X-Telegram-Init-Data": initData,
-          },
-        }
-      );
-      const data = await response.json();
+      const data = await getInvitations(userID);
 
       if (data) {
         const invitations = data.invitations || [];
         const totalFriendsCount = invitations.length;
-        const referrewardedCount = data.referrewarded
-          ? parseInt(data.referrewarded, 10)
-          : 0;
+        const referrewardedCount = data.referrewarded || 0;
 
-        setFriends(invitations);
-        localStorage.setItem(`friends_${userID}`, JSON.stringify(invitations));
+        // Transform Firebase user data to match expected format
+        const friendsList = invitations.map((user) => ({
+          Username: user.odl_username || user.odl_first_name || "Unknown",
+          totalgot: user.coins || 0,
+        }));
+
+        setFriends(friendsList);
+        localStorage.setItem(`friends_${userID}`, JSON.stringify(friendsList));
 
         if (totalFriendsCount > referrewardedCount) {
           const newUnrewardedFriends = totalFriendsCount - referrewardedCount;
           const rewardPoints = newUnrewardedFriends * FRIEND_REWARD;
 
-          setPoints((prevPoints) => prevPoints + rewardPoints);
+          // Update coins in Firebase and local state
+          const newTotal = await increaseCoins(userID, rewardPoints);
+          setPoints(newTotal);
           showModal(
             `You have earned ${rewardPoints} points for inviting ${newUnrewardedFriends} new friends!`
           );
@@ -198,7 +183,6 @@ const FriendsPage: React.FC = () => {
       }
       setIsLoading(false);
     } catch (error) {
-      // console.error("Error fetching friends:", error);
       console.log("Error fetching friends:", error);
       setIsLoading(false);
     } finally {

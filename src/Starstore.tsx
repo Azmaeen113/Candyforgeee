@@ -4,6 +4,7 @@ import { IoArrowBackSharp } from "react-icons/io5"; // Importing back arrow icon
 import { useUser } from "./UserContext"; // Import user context to get userID
 import { mainLogo } from "./images";
 import "./smallstore.css"; // Include your CSS file for custom styling
+import { updateUser } from "./firebase/services";
 
 interface StartStoreProps {
   onClose: () => void; // Function to close the store
@@ -42,16 +43,8 @@ const StartStore: React.FC<StartStoreProps> = ({ onClose }) => {
       // Request transaction through TonConnect UI
       await tonConnectUI.sendTransaction(transaction);
 
-      // Make API call after successful transaction to update the gamer data
-      const initData = window.Telegram.WebApp.initData || "";
-      await fetch("https://frontend.goldenfrog.live/update_gamer", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Telegram-Init-Data": initData
-        },
-        body: JSON.stringify({ GamerId: userID, hookspeedtime: 2 })
-      });
+      // Update user in Firebase after successful transaction
+      await updateUser(userID, { hookspeedtime: 2 });
 
       // Close the store and show success message
       onClose();

@@ -4,6 +4,7 @@ import { FaCheck } from "react-icons/fa";
 import { HiMiniXMark } from "react-icons/hi2";
 import { mainLogo } from "../images";
 import { useUser } from "../UserContext";
+import { getUserById, updateUser } from "../firebase/services";
 
 interface DailyRewardModalProps {
   onClose: () => void;
@@ -38,22 +39,17 @@ export default function DailyRewardModal({ onClose }: DailyRewardModalProps) {
 
     const fetchUserData = async () => {
       try {
-        const initData = window.Telegram.WebApp.initData || "";
-        const res = await fetch(
-          `https://frontend.goldenfrog.live/get_user?UserId=${userID}`,
-          { headers: { "X-Telegram-Init-Data": initData } }
-        );
+        const user = await getUserById(userID);
+        
+        if (!user) throw new Error("User not found");
 
-        if (!res.ok) throw new Error("Failed to fetch user data");
+        const lastTimeRaw = user.startime ?? null; // Unix s or null/0
+        const streakRaw = user.dailyRewardDay ?? 0; // number
+        const pointsRaw = user.coins ?? 0;
 
-        const { data } = await res.json();
-        const lastTimeRaw = data?.dailyclaimedtime ?? null; // Unix s or null/0
-        const streakRaw = data?.alreadydailyclaimed ?? "0"; // string | number
-        const pointsRaw = data?.totalgot ?? 0;
-
-        const lastTime = parseInt(lastTimeRaw ?? "0", 10) || 0;
-        const streak = parseInt(streakRaw ?? "0", 10) || 0;
-        const points = parseInt(pointsRaw ?? "0", 10) || 0;
+        const lastTime = lastTimeRaw || 0;
+        const streak = streakRaw || 0;
+        const points = pointsRaw || 0;
 
         setTotalGot(points);
 
@@ -116,22 +112,12 @@ export default function DailyRewardModal({ onClose }: DailyRewardModalProps) {
       const nowUnix = Math.floor(Date.now() / 1000);
       const newStreakStored = activeDay === 7 ? 0 : activeDay; // reset after day 7
 
-      const initData = window.Telegram.WebApp.initData || "";
-      const res = await fetch("https://frontend.goldenfrog.live/update_user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Telegram-Init-Data": initData,
-        },
-        body: JSON.stringify({
-          UserId: userID,
-          totalgot: newTotal.toString(),
-          dailyclaimedtime: nowUnix.toString(),
-          alreadydailyclaimed: newStreakStored.toString(),
-        }),
+      // Update user in Firebase
+      await updateUser(userID, {
+        coins: newTotal,
+        startime: nowUnix,
+        dailyRewardDay: newStreakStored,
       });
-
-      if (!res.ok) throw new Error("Failed to update user data");
 
       /* success – update UI & global points */
       setTotalGot(newTotal);

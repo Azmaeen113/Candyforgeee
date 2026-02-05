@@ -17,8 +17,8 @@ interface InviteFriendsProps {
 export default function InviteFriends({ taskStatus, refertotal, onInviteFriendsClick }: InviteFriendsProps) {
   const { userID } = useUser();
 
-  // Get invitation link
-  const invitationLink = `https://t.me/tap2earnatmbot/ATM?startapp=${encodeURIComponent(userID)}`;
+  // Get invitation link - Update this to your Telegram bot when ready
+  const invitationLink = `https://t.me/CandyForgeBot/CandyForge?startapp=${encodeURIComponent(userID)}`;
 
   const shareButtons = [
     { 

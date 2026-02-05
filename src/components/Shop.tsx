@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useUser } from "../UserContext";
 import { basicLevelMining, mediumLevelMining, advancedLevelMining } from "../images";
 import Modal from "../Modal";
+import { getUserById, updateUser } from "../firebase/services";
 
 interface ShopItem {
   id: number;
@@ -72,18 +73,9 @@ const Shop: React.FC = () => {
   useEffect(() => {
     const fetchMiningLevel = async () => {
       try {
-        const initData = window.Telegram.WebApp.initData || "";
-        const response = await fetch(
-          `https://frontend.goldenfrog.live/get_user?UserId=${userID}`,
-          {
-            headers: {
-              "X-Telegram-Init-Data": initData
-            }
-          }
-        );
-        const data = await response.json();
-        if (data.data && data.data.claimedtotal) {
-          setCurrentMiningLevel(parseInt(data.data.claimedtotal) || 1);
+        const user = await getUserById(userID);
+        if (user && user.level) {
+          setCurrentMiningLevel(user.level);
         }
       } catch (error) {
         console.error("Failed to fetch forging level:", error);
@@ -103,33 +95,18 @@ const Shop: React.FC = () => {
     }
 
     try {
-      const initData = window.Telegram.WebApp.initData || "";
+      const newPoints = points - item.price;
       
       // Update backend with new forging level and points
-      const response = await fetch(
-        "https://frontend.goldenfrog.live/update_user",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Telegram-Init-Data": initData
-          },
-          body: JSON.stringify({ 
-            UserId: userID, 
-            claimedtotal: item.id.toString(),
-            totalgot: points - item.price
-          })
-        }
-      );
+      await updateUser(userID, {
+        level: item.id,
+        coins: newPoints
+      });
 
-      if (response.ok) {
-        // Update local points and forging level
-        setPoints(points - item.price);
-        setCurrentMiningLevel(item.id);
-        setModalMessage(`Successfully purchased ${item.name}! Your forging rate is now ${item.miningRate} CANDY per hour.`);
-      } else {
-        throw new Error("Transaction failed");
-      }
+      // Update local points and forging level
+      setPoints(newPoints);
+      setCurrentMiningLevel(item.id);
+      setModalMessage(`Successfully purchased ${item.name}! Your forging rate is now ${item.miningRate} CANDY per hour.`);
     } catch (error) {
       console.error("Purchase failed:", error);
       setModalMessage("Transaction failed. Please try again.");

@@ -3,6 +3,7 @@ import "./DailyReward.css";
 import { rabbitPhoto, rabbitSmallPhoto } from "./images";
 //import StartStore from "./Starstore"; // Import StartStore component
 import { useUser } from "./UserContext"; // Import the user context
+import { claimDailyRewardFirebase } from "./firebase/services";
 
 interface DailyRewardProps {
   onClose: () => void; // Define the type for the onClose prop
@@ -16,69 +17,15 @@ const DailyReward: React.FC<DailyRewardProps> = ({ onClose }) => {
   useEffect(() => {
     const claimDailyReward = async () => {
       try {
-        const initData = window.Telegram.WebApp.initData || "";
-        // Make a POST request to the endpoint
-        const response = await fetch(
-          "https://frontend.goldenfrog.live/gamer",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Telegram-Init-Data": initData // Add initData to headers
-            },
-            body: JSON.stringify({ GamerId: userID })
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch gamer data");
+        const result = await claimDailyRewardFirebase(userID);
+        
+        if (result) {
+          setRewardAmount(result.reward);
+          setPoints(result.newTotal);
+        } else {
+          // Already claimed today, show 0
+          setRewardAmount(0);
         }
-
-        const data = await response.json();
-        const hookspeedtime = data.data.hookspeedtime || 1;
-
-        const result = 50 * hookspeedtime;
-        setRewardAmount(result);
-
-        // Increase totalgot
-        const increaseTotalgotResponse = await fetch(
-          "https://frontend.goldenfrog.live/increase_totalgot",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Telegram-Init-Data": initData
-            },
-            body: JSON.stringify({ UserId: userID, Amount: result })
-          }
-        );
-
-        if (!increaseTotalgotResponse.ok) {
-          throw new Error("Failed to increase total ATM");
-        }
-
-        const increaseTotalgotData = await increaseTotalgotResponse.json();
-
-        // Update gamer
-        const now = Math.floor(Date.now() / 1000);
-        const updateGamerResponse = await fetch(
-          "https://frontend.goldenfrog.live/update_gamer",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Telegram-Init-Data": initData
-            },
-            body: JSON.stringify({ GamerId: userID, startime: now })
-          }
-        );
-
-        if (!updateGamerResponse.ok) {
-          throw new Error("Failed to update gamer start time");
-        }
-
-        // Update points in context
-        setPoints(increaseTotalgotData.totalgot || result);
       } catch (error) {
         console.error("Error claiming daily reward:", error);
       }

@@ -22,6 +22,13 @@ import { mainLogo } from "./images";
 import DailyRewardModal from "./components/DailyReward";
 import LeagueSlider from "./components/LeagueSlider";
 import WelcomeBanner from "./components/WelcomeBanner";
+import { 
+  getOrCreateUser, 
+  getGamerData, 
+  getTaskStatuses,
+  resetDailyLimit,
+  updateWalletAddress
+} from "./firebase/services";
 
 declare const Telegram: any;
 
@@ -91,42 +98,20 @@ const App: React.FC = () => {
   /* ───── daily‑tap refill ───── */
 
   const refillDailyLimit = async (userid: string) => {
-    const initData = window.Telegram.WebApp.initData || "";
-    const now = Math.floor(Date.now() / 1000);
-    await fetch("https://frontend.goldenfrog.live/update_user", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Telegram-Init-Data": initData
-      },
-      body: JSON.stringify({
-        UserId: userid,
-        dailycombotime: now.toString(),
-        claimedtotal: "0"
-      })
-    });
-    setTrd(0);
+    try {
+      await resetDailyLimit(userid);
+      setTrd(0);
+    } catch (err) {
+      console.error("Failed to refill daily limit:", err);
+    }
   };
 
   /* ───── save lifetime points ───── */
 
   const savePoints = async () => {
-    if (!userID) return;
-    const initData = window.Telegram.WebApp.initData || "";
-    try {
-      await fetch("https://frontend.goldenfrog.live/update_user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Telegram-Init-Data": initData
-        },
-        body: JSON.stringify({ UserId: userID, totalgot: points })
-      });
-      setLastSavedPoints(points);
-    } catch (err) {
-      console.error("Failed to save points:", err);
-      showAlert("Failed to save points. Please check your connection.");
-    }
+    // Points are now auto-saved via Firebase in UserContext
+    // This function is kept for compatibility
+    setLastSavedPoints(points);
   };
 
   useEffect(() => {
@@ -138,7 +123,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     setWalletAddress(address);
-  }, [address, setWalletAddress]);
+    // Also update in Firebase
+    if (userID && address) {
+      updateWalletAddress(userID, address).catch(console.error);
+    }
+  }, [address, setWalletAddress, userID]);
 
   /* ───── Telegram init ───── */
 
@@ -182,23 +171,35 @@ const App: React.FC = () => {
     username: string
   ) => {
     try {
-      const initData = window.Telegram.WebApp.initData || "";
-      const res = await fetch(
-        `https://frontend.goldenfrog.live/get_user?UserId=${userid}`,
-        { headers: { "X-Telegram-Init-Data": initData } }
-      );
-
-      if (res.ok) {
-        const data = await res.json();
-        await loadPoints(userid, data);
-        loadTaskStatus(data);
+      const telegramUser = {
+        id: userid,
+        first_name: Telegram.WebApp.initDataUnsafe?.user?.first_name,
+        last_name: Telegram.WebApp.initDataUnsafe?.user?.last_name,
+        username: username,
+        photo_url: Telegram.WebApp.initDataUnsafe?.user?.photo_url
+      };
+      
+      // Determine if this is a new user invited by someone
+      const invitedBy = (!startparam || userid === startparam) ? null : startparam;
+      
+      // Get or create user in Firebase
+      const user = await getOrCreateUser(telegramUser, invitedBy);
+      
+      // Check if this is a new user (coins === 0 and no tasks completed)
+      const isNewUser = user.coins === 0 && (!user.tasksCompleted || user.tasksCompleted.length === 0);
+      
+      // Load user data
+      await loadPoints(userid, user);
+      await loadTaskStatusFromFirebase(userid);
+      
+      if (isNewUser) {
+        setShowOverlayPage(true);
+        setUserAdded(true);
+      } else {
         setShowOverlayPage(false);
         setUserAdded(false);
-      } else if (res.status === 404) {
-        await addUser(userid, startparam, username);
-      } else {
-        throw new Error(`Unexpected status: ${res.status}`);
       }
+      
     } catch (err) {
       console.error("fetchOrAddUser error:", err);
       showAlert("Cannot fetch user data. Please try again.");
@@ -206,67 +207,20 @@ const App: React.FC = () => {
     }
   };
 
-  const addUser = async (
-    userid: string,
-    startparam: string,
-    username: string
-  ) => {
-    const invitedBy = !startparam || userid === startparam ? null : startparam;
-    const initData = window.Telegram.WebApp.initData || "";
-
-    try {
-      const res = await fetch("https://frontend.goldenfrog.live/add_user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Telegram-Init-Data": initData
-        },
-        body: JSON.stringify({
-          UserId: userid,
-          invitedby: invitedBy || undefined,
-          Username: username
-        })
-      });
-
-      if (!res.ok) throw new Error(`Failed to add user: ${res.status}`);
-
-      setUserAdded(true);
-      setShowOverlayPage(true);
-      setLoading(false);
-    } catch (err) {
-      console.error("addUser error:", err);
-      showAlert("Failed to add user. Check your connection.");
-      setLoading(false);
-    }
-  };
-
   /* ───── load points + taps ───── */
 
-  const loadPoints = async (userid: string, dataFromFetch?: any) => {
+  const loadPoints = async (userid: string, userData?: any) => {
     try {
-      const data =
-        dataFromFetch ||
-        (await (
-          await fetch(
-            `https://frontend.goldenfrog.live/get_user?UserId=${userid}`,
-            {
-              headers: {
-                "X-Telegram-Init-Data": window.Telegram.WebApp.initData || ""
-              }
-            }
-          )
-        ).json());
+      const user = userData || await getOrCreateUser({ id: userid });
 
-      if (!(data && data.data)) return;
-
-      const got = parseInt(data.data.totalgot, 10) || 0;
+      const got = user.coins || 0;
       setPoints(got);
       setLastSavedPoints(got);
 
-      const claimed = parseInt(data.data.claimedtotal, 10) || 0;
+      const claimed = user.claimedtotal || 0;
       setTrd(claimed);
 
-      const storedTime = parseInt(data.data.dailycombotime || "0", 10);
+      const storedTime = user.dailycombotime || 0;
       const now = Math.floor(Date.now() / 1000);
 
       if (!storedTime) await refillDailyLimit(userid);
@@ -277,51 +231,27 @@ const App: React.FC = () => {
     }
   };
 
-  /* ───── task status loader ───── */
+  /* ───── task status loader (Firebase) ───── */
 
-  const loadTaskStatus = (data: any) => {
-    const updatedTaskStatus: { [key: string]: "not_started" | "completed" } = {
-      task1: data.data.task1 === "Done" ? "completed" : "not_started",
-      task2: data.data.task2 === "Done" ? "completed" : "not_started",
-      task7: data.data.task7 === "Done" ? "completed" : "not_started",
-      task14: data.data.task14 === "Done" ? "completed" : "not_started",
-      task15: data.data.task15 === "Done" ? "completed" : "not_started",
-      task16: data.data.task16 === "Done" ? "completed" : "not_started",
-      task17: data.data.task17 === "Done" ? "completed" : "not_started",
-      task18: data.data.task18 === "Done" ? "completed" : "not_started",
-      task19: data.data.task19 === "Done" ? "completed" : "not_started",
-      task20: data.data.task20 === "Done" ? "completed" : "not_started",
-      task21: data.data.task21 === "Done" ? "completed" : "not_started",
-      task22: data.data.task22 === "Done" ? "completed" : "not_started",
-      task10: data.data.task10 === "Done" ? "completed" : "not_started",
-      task11: data.data.task11 === "Done" ? "completed" : "not_started",
-      task12: data.data.task12 === "Done" ? "completed" : "not_started"
-    };
-    setTaskStatus((prev) => ({ ...prev, ...updatedTaskStatus }));
-
-    const referrals = parseInt(data.data.referrewarded, 10);
-    setRefertotal(isNaN(referrals) ? 0 : referrals);
+  const loadTaskStatusFromFirebase = async (userid: string) => {
+    try {
+      const statuses = await getTaskStatuses(userid);
+      setTaskStatus((prev) => ({ ...prev, ...statuses }));
+      
+      // Get referral count from user
+      const user = await getOrCreateUser({ id: userid });
+      setRefertotal(user.referrewarded || 0);
+    } catch (err) {
+      console.error("loadTaskStatus error:", err);
+    }
   };
 
   /* ───── daily reward status ───── */
 
   const checkDailyRewardStatus = async () => {
     try {
-      const initData = window.Telegram.WebApp.initData || "";
-      const res = await fetch("https://frontend.goldenfrog.live/gamer", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Telegram-Init-Data": initData
-        },
-        body: JSON.stringify({ GamerId: userID })
-      });
-      if (!res.ok) {
-        setDailyRewardAvailable(false);
-        return;
-      }
-      const data = await res.json();
-      const startime = data.data.startime;
+      const gamerData = await getGamerData(userID);
+      const startime = gamerData.startime;
       const now = Math.floor(Date.now() / 1000);
 
       if (!startime) setDailyRewardAvailable(true);

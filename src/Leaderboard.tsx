@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useUser } from "./UserContext";
 import { FaTrophy, FaCrown, FaUsers, FaChevronUp } from "react-icons/fa";
-
+import { getLeaderboard, getUserRank, getUserById, getTotalUserCount } from "./firebase/services";
 
 import medal1 from "./images/medal1.png";
 import medal2 from "./images/medal2.png";
@@ -102,44 +102,36 @@ const LeaderboardPage: React.FC = () => {
       setTotalUsers(storedTotalUsers);
     }
 
-    // Fetch latest leaderboard data from the server
+    // Fetch latest leaderboard data from Firebase
     const fetchLeaderboardData = async () => {
       try {
-        const initData = window.Telegram.WebApp.initData || ""; // Get initData from Telegram WebApp
-        const response = await fetch(
-          `https://frontend.goldenfrog.live/get_user_ranking?UserId=${userID}`,
-          {
-            headers: {
-              "X-Telegram-Init-Data": initData // Add initData to headers
-            }
-          }
-        );
-        const data = await response.json();
+        // Get leaderboard data
+        const leaderboardEntries = await getLeaderboard(100);
+        const formattedLeaderboardData = leaderboardEntries.map((entry) => ({
+          username: entry.odl_username || entry.odl_first_name || "Unknown",
+          totalgot: entry.coins,
+          position: entry.rank || 0
+        }));
+        setLeaderboardData(formattedLeaderboardData);
+        saveToLocalStorage("leaderboardData", formattedLeaderboardData);
 
-        if (data.requested_user) {
+        // Get user's own ranking
+        const userRank = await getUserRank(userID);
+        const currentUser = await getUserById(userID);
+        if (currentUser) {
           const userRanking = {
-            username: data.requested_user.username,
-            totalgot: data.requested_user.totalgot,
-            position: data.requested_user.position
+            username: currentUser.odl_username || currentUser.odl_first_name || "Unknown",
+            totalgot: currentUser.coins,
+            position: userRank
           };
           setOwnRanking(userRanking);
           saveToLocalStorage("ownRanking", userRanking);
         }
 
-        if (data.top_users) {
-          const formattedLeaderboardData = data.top_users.map((user: any) => ({
-            username: user.username,
-            totalgot: user.totalgot,
-            position: user.rank
-          }));
-          setLeaderboardData(formattedLeaderboardData);
-          saveToLocalStorage("leaderboardData", formattedLeaderboardData);
-        }
-
-        if (data.total_users) {
-          setTotalUsers(data.total_users);
-          saveToLocalStorage("totalUsers", data.total_users);
-        }
+        // Get total user count
+        const totalCount = await getTotalUserCount();
+        setTotalUsers(totalCount.toString());
+        saveToLocalStorage("totalUsers", totalCount.toString());
       } catch (error) {
         console.error("Error fetching leaderboard data:", error);
       }
