@@ -105,7 +105,7 @@ const GameModal: React.FC<GameModalProps> = ({ isOpen, onClose }) => {
               WebkitTextFillColor: 'transparent'
             }}
           >
-            Candy Cascade
+            Candy Forge
           </h1>
 
           <p className="text-gray-400 mb-2 font-poppins">
@@ -163,7 +163,7 @@ const GameModal: React.FC<GameModalProps> = ({ isOpen, onClose }) => {
           <iframe
             src="/gem-cascade-studio/index.html"
             className="w-full h-full border-0"
-            title="Candy Cascade Game"
+            title="Candy Forge Game"
             allow="autoplay"
           />
         </div>
