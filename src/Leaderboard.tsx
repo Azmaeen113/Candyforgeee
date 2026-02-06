@@ -105,8 +105,8 @@ const LeaderboardPage: React.FC = () => {
     // Fetch latest leaderboard data from Firebase
     const fetchLeaderboardData = async () => {
       try {
-        // Get leaderboard data
-        const leaderboardEntries = await getLeaderboard(100);
+        // Get leaderboard data - top 50 users
+        const leaderboardEntries = await getLeaderboard(50);
         const formattedLeaderboardData = leaderboardEntries.map((entry) => ({
           username: entry.odl_username || entry.odl_first_name || "Unknown",
           totalgot: entry.coins,

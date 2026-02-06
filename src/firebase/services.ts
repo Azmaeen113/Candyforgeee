@@ -347,7 +347,7 @@ export async function getReferrals(odlId: string): Promise<FirebaseUser[]> {
 export interface Transaction {
   id?: string;
   odl_id: string;
-  type: "earn" | "spend" | "reward" | "task" | "referral" | "game";
+  type: "earn" | "spend" | "reward" | "task" | "referral" | "game" | "withdrawal";
   amount: number;
   description: string;
   status: "pending" | "completed" | "failed";
@@ -628,4 +628,185 @@ export async function getTaskStatuses(odlId: string): Promise<{ [key: string]: "
   });
   
   return statuses;
+}
+
+// ==================== PAYMENT REQUEST SERVICES ====================
+
+export interface PaymentRequest {
+  id?: string;
+  odl_id: string;
+  username: string;
+  walletAddress: string;
+  requestedAmount: number; // Amount of CANDY to withdraw
+  payableAmount: number;   // Amount in payment currency (CANDY / 10)
+  status: "pending" | "paid" | "rejected";
+  createdAt: Timestamp;
+  processedAt: Timestamp | null;
+  processedBy: string | null;
+}
+
+// Create a payment request
+export async function createPaymentRequest(
+  odlId: string, 
+  requestedAmount: number
+): Promise<{ success: boolean; message: string }> {
+  const user = await getUserById(odlId);
+  if (!user) return { success: false, message: "User not found" };
+  
+  if (!user.walletAddress) {
+    return { success: false, message: "Please set your wallet address first" };
+  }
+  
+  if (requestedAmount > user.coins) {
+    return { success: false, message: "Insufficient CANDY balance" };
+  }
+  
+  if (requestedAmount < 100) {
+    return { success: false, message: "Minimum withdrawal is 100 CANDY" };
+  }
+  
+  // Check cooldown (3 days = 259200 seconds)
+  const threeYDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
+  const paymentsRef = collection(db, "paymentRequests");
+  const recentQuery = query(
+    paymentsRef,
+    where("odl_id", "==", odlId),
+    where("createdAt", ">=", Timestamp.fromMillis(threeYDaysAgo))
+  );
+  const recentSnapshot = await getDocs(recentQuery);
+  
+  if (!recentSnapshot.empty) {
+    // Find the most recent request
+    const lastRequest = recentSnapshot.docs[0].data();
+    const lastRequestTime = lastRequest.createdAt.toMillis();
+    const nextAvailable = new Date(lastRequestTime + (3 * 24 * 60 * 60 * 1000));
+    return { 
+      success: false, 
+      message: `You can only request payment once every 3 days. Next available: ${nextAvailable.toLocaleDateString()}` 
+    };
+  }
+  
+  // Create the payment request
+  const paymentRequest: Omit<PaymentRequest, 'id' | 'createdAt'> & { createdAt: ReturnType<typeof serverTimestamp> } = {
+    odl_id: odlId,
+    username: user.odl_username || user.odl_first_name || "Unknown",
+    walletAddress: user.walletAddress,
+    requestedAmount,
+    payableAmount: Math.floor(requestedAmount / 10),
+    status: "pending",
+    createdAt: serverTimestamp(),
+    processedAt: null,
+    processedBy: null
+  };
+  
+  await addDoc(collection(db, "paymentRequests"), paymentRequest);
+  
+  // Deduct the CANDY from user's balance
+  const userRef = doc(db, "users", odlId);
+  await updateDoc(userRef, {
+    coins: increment(-requestedAmount),
+    updatedAt: serverTimestamp()
+  });
+  
+  // Log transaction
+  await addTransaction({
+    odl_id: odlId,
+    type: "withdrawal",
+    amount: -requestedAmount,
+    description: `Payment request: ${requestedAmount} CANDY`,
+    status: "pending"
+  });
+  
+  return { success: true, message: "Payment request submitted successfully" };
+}
+
+// Get user's payment requests
+export async function getUserPaymentRequests(odlId: string): Promise<PaymentRequest[]> {
+  const paymentsRef = collection(db, "paymentRequests");
+  const q = query(
+    paymentsRef,
+    where("odl_id", "==", odlId),
+    orderBy("createdAt", "desc")
+  );
+  const snapshot = await getDocs(q);
+  
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  } as PaymentRequest));
+}
+
+// Get last payment request timestamp for cooldown check
+export async function getLastPaymentRequestTime(odlId: string): Promise<number | null> {
+  const paymentsRef = collection(db, "paymentRequests");
+  const q = query(
+    paymentsRef,
+    where("odl_id", "==", odlId),
+    orderBy("createdAt", "desc"),
+    limit(1)
+  );
+  const snapshot = await getDocs(q);
+  
+  if (snapshot.empty) return null;
+  
+  const lastRequest = snapshot.docs[0].data();
+  return lastRequest.createdAt.toMillis();
+}
+
+// ==================== ADMIN PAYMENT SERVICES ====================
+
+// Get all pending payment requests (for admin)
+export async function getAllPaymentRequests(statusFilter?: "pending" | "paid" | "rejected"): Promise<PaymentRequest[]> {
+  const paymentsRef = collection(db, "paymentRequests");
+  let q;
+  
+  if (statusFilter) {
+    q = query(
+      paymentsRef,
+      where("status", "==", statusFilter),
+      orderBy("createdAt", "desc")
+    );
+  } else {
+    q = query(
+      paymentsRef,
+      orderBy("createdAt", "desc")
+    );
+  }
+  
+  const snapshot = await getDocs(q);
+  
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  } as PaymentRequest));
+}
+
+// Mark payment as paid (admin action)
+export async function markPaymentAsPaid(paymentId: string, adminEmail: string): Promise<boolean> {
+  const paymentRef = doc(db, "paymentRequests", paymentId);
+  await updateDoc(paymentRef, {
+    status: "paid",
+    processedAt: serverTimestamp(),
+    processedBy: adminEmail
+  });
+  return true;
+}
+
+// Mark payment as rejected (admin action)
+export async function markPaymentAsRejected(paymentId: string, adminEmail: string, refundAmount: number, odlId: string): Promise<boolean> {
+  const paymentRef = doc(db, "paymentRequests", paymentId);
+  await updateDoc(paymentRef, {
+    status: "rejected",
+    processedAt: serverTimestamp(),
+    processedBy: adminEmail
+  });
+  
+  // Refund the CANDY to user's balance
+  const userRef = doc(db, "users", odlId);
+  await updateDoc(userRef, {
+    coins: increment(refundAmount),
+    updatedAt: serverTimestamp()
+  });
+  
+  return true;
 }

@@ -9,22 +9,37 @@ import { IoMdWallet,  } from "react-icons/io";
 import {
   FaChevronRight,
   FaCopy,
-  //FaExchangeAlt,
+  FaClock,
   FaExternalLinkAlt,
-  FaInfoCircle
+  FaInfoCircle,
+  FaMoneyBillWave,
+  FaHistory
 } from "react-icons/fa";
-import { getUserById, updateWalletAddress } from "./firebase/services";
+import { 
+  getUserById, 
+  updateWalletAddress,
+  createPaymentRequest,
+  getUserPaymentRequests,
+  getLastPaymentRequestTime,
+  PaymentRequest
+} from "./firebase/services";
 
 interface AirdropProps {}
 
 const Airdrop: React.FC<AirdropProps> = () => {
-  const { userID, points, setTrd } = useUser();
+  const { userID, points, setPoints, setTrd } = useUser();
   const [showSetWalletModal, setShowSetWalletModal] = useState(false);
   const [showWhatIsModal, setShowWhatIsModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string>("");
   const [newWalletAddress, setNewWalletAddress] = useState<string>("");
   const [modalMessage, setModalMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
+  const [canRequestPayment, setCanRequestPayment] = useState(true);
+  const [nextPaymentDate, setNextPaymentDate] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -41,6 +56,22 @@ const Airdrop: React.FC<AirdropProps> = () => {
             setTrd(user.claimedtotal || 0);
           }
         }
+        
+        // Fetch payment requests
+        const requests = await getUserPaymentRequests(userID);
+        setPaymentRequests(requests);
+        
+        // Check cooldown
+        const lastPaymentTime = await getLastPaymentRequestTime(userID);
+        if (lastPaymentTime) {
+          const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+          const nextAvailable = lastPaymentTime + threeDaysMs;
+          if (Date.now() < nextAvailable) {
+            setCanRequestPayment(false);
+            setNextPaymentDate(new Date(nextAvailable).toLocaleDateString());
+          }
+        }
+        
         setIsLoading(false);
       } catch (error) {
         console.error("Failed to fetch user data:", error);
@@ -70,6 +101,47 @@ const Airdrop: React.FC<AirdropProps> = () => {
     } catch (error) {
       console.error("Error saving wallet address:", error);
       setModalMessage("Failed to save wallet address. Please try again.");
+    }
+  };
+
+  // Handle payment request
+  const handlePaymentRequest = async () => {
+    const amount = parseInt(paymentAmount);
+    if (!amount || amount < 100) {
+      setModalMessage("Minimum withdrawal is 100 CANDY");
+      return;
+    }
+    if (amount > points) {
+      setModalMessage("Insufficient CANDY balance");
+      return;
+    }
+    if (!walletAddress) {
+      setModalMessage("Please set your wallet address first");
+      return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+      const result = await createPaymentRequest(userID, amount);
+      if (result.success) {
+        setModalMessage(result.message);
+        setShowPaymentModal(false);
+        setPaymentAmount("");
+        // Update local points
+        setPoints(points - amount);
+        // Refresh payment requests
+        const requests = await getUserPaymentRequests(userID);
+        setPaymentRequests(requests);
+        setCanRequestPayment(false);
+        setNextPaymentDate(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString());
+      } else {
+        setModalMessage(result.message);
+      }
+    } catch (error) {
+      console.error("Error creating payment request:", error);
+      setModalMessage("Failed to submit payment request. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -359,6 +431,164 @@ const Airdrop: React.FC<AirdropProps> = () => {
             </div>
           </div>
         </div>
+
+        {/* Request Payment Section */}
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold text-white mb-3 flex items-center font-fredoka">
+            <FaMoneyBillWave className="w-5 h-5 mr-2 text-[#00FFB3]" />
+            Request Payment
+          </h2>
+
+          <div className="relative group">
+            <div 
+              className="absolute -inset-[1px] rounded-xl opacity-30 group-hover:opacity-60 transition duration-300 blur-sm"
+              style={{ background: 'linear-gradient(135deg, #00FFB3 0%, #00F5FF 100%)' }}
+            ></div>
+            <div 
+              className="relative rounded-xl p-5 shadow-xl"
+              style={{
+                background: 'rgba(45, 27, 78, 0.8)',
+                backdropFilter: 'blur(20px)',
+                border: '1px solid rgba(0, 255, 179, 0.3)'
+              }}
+            >
+              {/* Info about payment system */}
+              <div 
+                className="rounded-xl p-3 mb-4"
+                style={{
+                  background: 'rgba(0, 255, 179, 0.1)',
+                  border: '1px solid rgba(0, 255, 179, 0.3)'
+                }}
+              >
+                <div className="flex items-center space-x-2 mb-1">
+                  <FaInfoCircle className="w-4 h-4 text-[#00FFB3]" />
+                  <p className="text-sm font-medium text-[#00FFB3]">How it works</p>
+                </div>
+                <ul className="text-sm text-gray-300 space-y-1 ml-6 list-disc">
+                  <li>Request payment for your CANDY balance</li>
+                  <li>Payable amount = CANDY ÷ 10</li>
+                  <li>Payment will be sent to your wallet manually</li>
+                  <li>You can request once every 3 days</li>
+                  <li>Processing may take some time</li>
+                </ul>
+              </div>
+
+              {/* Payable Amount Display */}
+              <div className="flex items-center justify-between mb-4 p-3 rounded-xl"
+                style={{
+                  background: 'rgba(45, 27, 78, 0.6)',
+                  border: '1px solid rgba(0, 245, 255, 0.2)'
+                }}
+              >
+                <span className="text-gray-400">Your Payable Amount</span>
+                <span 
+                  className="text-xl font-bold"
+                  style={{
+                    background: 'linear-gradient(135deg, #00FFB3, #00F5FF)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent'
+                  }}
+                >
+                  {Math.floor(points / 10).toLocaleString()} Units
+                </span>
+              </div>
+
+              {/* Cooldown Notice */}
+              {!canRequestPayment && (
+                <div 
+                  className="rounded-xl p-3 mb-4"
+                  style={{
+                    background: 'rgba(255, 229, 0, 0.1)',
+                    border: '1px solid rgba(255, 229, 0, 0.3)'
+                  }}
+                >
+                  <div className="flex items-center space-x-2">
+                    <FaClock className="w-4 h-4 text-[#FFE500]" />
+                    <p className="text-sm text-[#FFE500]">
+                      Next request available: {nextPaymentDate}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Request Button */}
+              <button
+                onClick={() => setShowPaymentModal(true)}
+                disabled={!canRequestPayment || !walletAddress || points < 100}
+                className="w-full py-3 rounded-xl text-white font-semibold transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  background: canRequestPayment && walletAddress && points >= 100
+                    ? 'linear-gradient(135deg, #00FFB3 0%, #00F5FF 100%)'
+                    : 'rgba(100, 100, 100, 0.5)',
+                  boxShadow: canRequestPayment ? '0 8px 30px rgba(0, 255, 179, 0.4)' : 'none'
+                }}
+              >
+                {!walletAddress 
+                  ? "Set Wallet First" 
+                  : points < 100 
+                  ? "Min 100 CANDY Required"
+                  : !canRequestPayment 
+                  ? "Cooldown Active" 
+                  : "Request Payment"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Payment History */}
+        {paymentRequests.length > 0 && (
+          <div className="mb-10">
+            <h2 className="text-lg font-semibold text-white mb-3 flex items-center font-fredoka">
+              <FaHistory className="w-5 h-5 mr-2 text-[#B026FF]" />
+              Payment History
+            </h2>
+
+            <div className="space-y-2">
+              {paymentRequests.slice(0, 5).map((request, index) => (
+                <div 
+                  key={request.id || index}
+                  className="rounded-xl p-4"
+                  style={{
+                    background: 'rgba(45, 27, 78, 0.6)',
+                    backdropFilter: 'blur(20px)',
+                    border: '1px solid rgba(176, 38, 255, 0.2)'
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-white font-medium">{request.requestedAmount.toLocaleString()} CANDY</p>
+                      <p className="text-xs text-gray-400">
+                        {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Pending'}
+                      </p>
+                    </div>
+                    <span 
+                      className="px-3 py-1 rounded-full text-xs font-medium"
+                      style={{
+                        background: request.status === 'paid' 
+                          ? 'rgba(0, 255, 179, 0.2)' 
+                          : request.status === 'pending'
+                          ? 'rgba(255, 229, 0, 0.2)'
+                          : 'rgba(255, 80, 80, 0.2)',
+                        color: request.status === 'paid' 
+                          ? '#00FFB3' 
+                          : request.status === 'pending'
+                          ? '#FFE500'
+                          : '#FF5050',
+                        border: `1px solid ${request.status === 'paid' 
+                          ? 'rgba(0, 255, 179, 0.3)' 
+                          : request.status === 'pending'
+                          ? 'rgba(255, 229, 0, 0.3)'
+                          : 'rgba(255, 80, 80, 0.3)'}`
+                      }}
+                    >
+                      {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* What is CANDY Modal */}
@@ -549,6 +779,136 @@ const Airdrop: React.FC<AirdropProps> = () => {
                   }}
                 >
                   Save Address
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Request Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-md bg-black/60">
+          <div className="relative w-[90%] max-w-md">
+            <div 
+              className="absolute -inset-[2px] rounded-2xl opacity-50 blur-sm"
+              style={{ background: 'linear-gradient(135deg, #00FFB3 0%, #00F5FF 100%)' }}
+            ></div>
+            <div 
+              className="relative rounded-2xl shadow-2xl overflow-hidden"
+              style={{
+                background: 'rgba(26, 11, 46, 0.95)',
+                backdropFilter: 'blur(20px)',
+                border: '1px solid rgba(0, 255, 179, 0.3)'
+              }}
+            >
+              <div 
+                className="flex items-center justify-between p-5"
+                style={{ borderBottom: '1px solid rgba(0, 255, 179, 0.2)' }}
+              >
+                <div className="flex items-center space-x-2">
+                  <div 
+                    className="w-10 h-10 rounded-full flex items-center justify-center"
+                    style={{ background: 'linear-gradient(135deg, rgba(0, 255, 179, 0.2), rgba(0, 245, 255, 0.2))' }}
+                  >
+                    <FaMoneyBillWave className="w-5 h-5 text-[#00FFB3]" />
+                  </div>
+                  <h2 
+                    className="text-xl font-bold font-fredoka"
+                    style={{ background: 'linear-gradient(135deg, #00FFB3, #00F5FF)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
+                  >
+                    Request Payment
+                  </h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowPaymentModal(false);
+                    setPaymentAmount("");
+                  }}
+                  className="w-8 h-8 flex items-center justify-center rounded-full transition-all duration-300 hover:scale-110"
+                  style={{
+                    background: 'rgba(0, 255, 179, 0.2)',
+                    border: '1px solid rgba(0, 255, 179, 0.3)'
+                  }}
+                >
+                  <RxCross2 size={20} className="text-[#00FFB3]" />
+                </button>
+              </div>
+
+              <div className="p-5">
+                {/* Current Balance */}
+                <div className="mb-4 p-3 rounded-xl"
+                  style={{
+                    background: 'rgba(45, 27, 78, 0.6)',
+                    border: '1px solid rgba(0, 245, 255, 0.2)'
+                  }}
+                >
+                  <p className="text-gray-400 text-sm">Available Balance</p>
+                  <p className="text-2xl font-bold text-white">{points.toLocaleString()} CANDY</p>
+                </div>
+
+                {/* Amount Input */}
+                <div className="mb-4">
+                  <label className="block text-gray-400 text-sm mb-2">
+                    Amount to Withdraw (CANDY)
+                  </label>
+                  <input
+                    type="number"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    placeholder="Min 100 CANDY"
+                    min="100"
+                    max={points}
+                    className="w-full text-white px-4 py-3 rounded-xl focus:outline-none placeholder-gray-500 transition-all duration-300"
+                    style={{
+                      background: 'rgba(45, 27, 78, 0.8)',
+                      border: '1px solid rgba(0, 255, 179, 0.3)'
+                    }}
+                  />
+                </div>
+
+                {/* Conversion Preview */}
+                {paymentAmount && parseInt(paymentAmount) >= 100 && (
+                  <div className="mb-4 p-3 rounded-xl"
+                    style={{
+                      background: 'rgba(0, 255, 179, 0.1)',
+                      border: '1px solid rgba(0, 255, 179, 0.3)'
+                    }}
+                  >
+                    <p className="text-gray-400 text-sm">You will receive</p>
+                    <p className="text-xl font-bold text-[#00FFB3]">
+                      {Math.floor(parseInt(paymentAmount) / 10).toLocaleString()} Units
+                    </p>
+                  </div>
+                )}
+
+                {/* Warning */}
+                <div 
+                  className="rounded-xl p-3 mb-5"
+                  style={{
+                    background: 'rgba(255, 229, 0, 0.1)',
+                    border: '1px solid rgba(255, 229, 0, 0.3)'
+                  }}
+                >
+                  <div className="flex items-center space-x-2 mb-1">
+                    <FaInfoCircle className="w-4 h-4 text-[#FFE500]" />
+                    <p className="text-sm font-medium text-[#FFE500]">Please Note</p>
+                  </div>
+                  <p className="text-sm text-gray-300">
+                    Payments are processed manually and may take some time. You can only request once every 3 days.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handlePaymentRequest}
+                  disabled={isSubmitting || !paymentAmount || parseInt(paymentAmount) < 100 || parseInt(paymentAmount) > points}
+                  className="w-full py-3 rounded-xl text-white font-semibold transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    background: 'linear-gradient(135deg, #00FFB3 0%, #00F5FF 100%)',
+                    boxShadow: '0 8px 30px rgba(0, 255, 179, 0.4)'
+                  }}
+                >
+                  {isSubmitting ? "Submitting..." : "Submit Request"}
                 </button>
               </div>
             </div>

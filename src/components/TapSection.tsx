@@ -96,11 +96,11 @@ export default function TapSection({ toggleDailyLogin }: TapSectionProps) {
   const barPct = (tapsRemaining / 1000) * 100;
 
   return (
-    <div className="flex flex-col gap-7 justify-between py-7 items-center w-full h-full animate-fade-in-up font-poppins">
+    <div className="flex flex-col justify-between items-center w-full h-full animate-fade-in-up font-poppins overflow-hidden py-2" style={{ minHeight: 'calc(100vh - 140px)', maxHeight: 'calc(100vh - 140px)' }}>
       {/* Candy Forge Balance Display */}
-      <div className="flex items-center justify-center relative gap-3">
+      <div className="flex items-center justify-center relative gap-2 shrink-0">
         <div 
-          className="h-[52px] w-[52px] rounded-full flex items-center justify-center shadow-xl"
+          className="h-10 w-10 rounded-full flex items-center justify-center shadow-xl"
           style={{
             background: 'linear-gradient(135deg, #00F5FF, #FF10F0, #B026FF)',
             boxShadow: '0 4px 20px rgba(0, 245, 255, 0.4)'
@@ -109,13 +109,13 @@ export default function TapSection({ toggleDailyLogin }: TapSectionProps) {
           <img
             src={mainLogo}
             alt="Candy Forge"
-            className="h-[46px] w-[46px] object-contain rounded-full"
+            className="h-9 w-9 object-contain rounded-full"
           />
         </div>
-        <div className="flex items-center text-white text-[36px] font-extrabold font-fredoka">
+        <div className="flex items-center text-white text-2xl font-extrabold font-fredoka">
           {Math.floor(points).toLocaleString()}
           <span 
-            className="text-[24px] ml-2 font-bold"
+            className="text-lg ml-2 font-bold"
             style={{
               background: 'linear-gradient(135deg, #00F5FF, #FF10F0)',
               WebkitBackgroundClip: 'text',
@@ -129,12 +129,12 @@ export default function TapSection({ toggleDailyLogin }: TapSectionProps) {
 
       {/* Candy Tap Area - Glowing, Pulsing */}
       <div
-        className="relative w-full max-w-xs mt-6 rounded-full perspective-[800px] group cursor-pointer"
+        className="relative w-full max-w-[200px] rounded-full perspective-[800px] group cursor-pointer flex-shrink-0 my-2"
         onClick={handleTap}
       >
         {/* Outer glow effect */}
         <div 
-          className="absolute inset-0 z-0 rounded-full blur-2xl group-hover:blur-3xl transition-all duration-300"
+          className="absolute inset-0 z-0 rounded-full blur-xl group-hover:blur-2xl transition-all duration-300"
           style={{
             background: 'linear-gradient(135deg, rgba(0, 245, 255, 0.3), rgba(255, 16, 240, 0.2), rgba(176, 38, 255, 0.2))'
           }}
@@ -142,7 +142,7 @@ export default function TapSection({ toggleDailyLogin }: TapSectionProps) {
         
         {/* Animated ring */}
         <div 
-          className="absolute inset-[-4px] rounded-full animate-pulse"
+          className="absolute inset-[-3px] rounded-full animate-pulse"
           style={{
             background: 'linear-gradient(135deg, #00F5FF, #FF10F0, #B026FF, #00F5FF)',
             backgroundSize: '300% 300%',
@@ -155,14 +155,14 @@ export default function TapSection({ toggleDailyLogin }: TapSectionProps) {
           src={mainLogo}
           alt="Tap to Forge"
           style={tapStyle}
-          className="relative w-full h-auto rounded-full border-4 border-candy-cyan/50 shadow-2xl select-none transition-all duration-200 bg-forge-deep"
+          className="relative w-full h-auto rounded-full border-3 border-candy-cyan/50 shadow-xl select-none transition-all duration-200 bg-forge-deep"
         />
         
         {/* Tap effects */}
         {tapEffects.map((eff) => (
           <span
             key={eff.id}
-            className="absolute font-extrabold text-[38px] animate-float pointer-events-none font-fredoka"
+            className="absolute font-extrabold text-[32px] animate-float pointer-events-none font-fredoka"
             style={{ 
               left: eff.x, 
               top: eff.y,
@@ -178,18 +178,18 @@ export default function TapSection({ toggleDailyLogin }: TapSectionProps) {
       </div>
 
       {/* Play Game Button */}
-      <div className="w-full max-w-[400px] px-3 mb-4">
+      <div className="w-full max-w-[380px] px-3 shrink-0">
         <button
           onClick={() => setIsGameModalOpen(true)}
-          className="w-full py-3 px-4 text-white flex items-center justify-center gap-3 rounded-2xl font-bold text-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+          className="w-full py-2 px-3 text-white flex items-center justify-center gap-2 rounded-xl font-bold text-sm transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
           style={{
             background: 'rgba(45, 27, 78, 0.7)',
             backdropFilter: 'blur(20px)',
             border: '2px solid rgba(255, 16, 240, 0.5)',
-            boxShadow: '0 0 20px rgba(255, 16, 240, 0.3), inset 0 0 20px rgba(255, 16, 240, 0.1)'
+            boxShadow: '0 0 15px rgba(255, 16, 240, 0.3), inset 0 0 15px rgba(255, 16, 240, 0.1)'
           }}
         >
-          <FaGamepad className="w-6 h-6" style={{ color: '#FF10F0' }} />
+          <FaGamepad className="w-5 h-5" style={{ color: '#FF10F0' }} />
           <span 
             className="font-poppins"
             style={{
@@ -200,23 +200,23 @@ export default function TapSection({ toggleDailyLogin }: TapSectionProps) {
           >
             Play Game
           </span>
-          <span className="text-sm px-2 py-0.5 rounded-full" style={{ background: '#FFE500', color: '#1A0B2E' }}>
+          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#FFE500', color: '#1A0B2E' }}>
             +CANDY
           </span>
         </button>
       </div>
 
       {/* Candy Progress Bar */}
-      <div className="flex flex-col gap-3 items-center w-full px-3">
+      <div className="flex flex-col gap-2 items-center w-full px-3 shrink-0">
         <div 
-          className="flex items-center gap-2 w-full max-w-[400px] px-4 py-3 rounded-2xl animate-fade-in"
+          className="flex items-center gap-2 w-full max-w-[380px] px-3 py-2 rounded-xl animate-fade-in"
           style={{
             background: 'rgba(45, 27, 78, 0.6)',
             backdropFilter: 'blur(20px)',
             border: '1px solid rgba(0, 245, 255, 0.2)'
           }}
         >
-          <div className="flex-1 h-4 bg-forge-deep rounded-full overflow-hidden relative">
+          <div className="flex-1 h-3 bg-forge-deep rounded-full overflow-hidden relative">
             <div
               className="h-full transition-all duration-500"
               style={{ 
@@ -236,7 +236,7 @@ export default function TapSection({ toggleDailyLogin }: TapSectionProps) {
             </div>
           </div>
           <span 
-            className="text-base font-bold min-w-[70px] text-center"
+            className="text-sm font-bold min-w-[60px] text-center"
             style={{
               background: 'linear-gradient(135deg, #00F5FF, #FF10F0)',
               WebkitBackgroundClip: 'text',
@@ -248,30 +248,30 @@ export default function TapSection({ toggleDailyLogin }: TapSectionProps) {
         </div>
 
         {/* Daily Reward Button - Candy Style */}
-        <div className="w-full max-w-[400px] relative active:scale-95 transition-transform animate-fade-in-up">
+        <div className="w-full max-w-[380px] relative active:scale-95 transition-transform animate-fade-in-up">
           <button
             onClick={toggleDailyLogin}
-            className="w-full py-4 px-4 text-white flex items-center justify-center rounded-2xl font-bold text-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+            className="w-full py-3 px-3 text-white flex items-center justify-center rounded-xl font-bold text-base transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             style={{
               background: 'linear-gradient(135deg, #00F5FF 0%, #FF10F0 50%, #B026FF 100%)',
-              boxShadow: '0 8px 30px rgba(255, 16, 240, 0.4)'
+              boxShadow: '0 6px 25px rgba(255, 16, 240, 0.4)'
             }}
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <img
                 src={dailyReward}
-                className="w-9 h-9"
+                className="w-7 h-7"
                 alt="Daily Reward"
               />
-              <span className="font-bold text-lg font-poppins">Daily Reward</span>
+              <span className="font-bold text-base font-poppins">Daily Reward</span>
               <div className="flex items-center">
-                <span className="relative flex h-6 w-6">
+                <span className="relative flex h-5 w-5">
                   <span 
                     className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
                     style={{ background: '#00F5FF' }}
                   />
                   <span 
-                    className="relative inline-flex rounded-full h-6 w-6 text-sm items-center justify-center font-bold"
+                    className="relative inline-flex rounded-full h-5 w-5 text-xs items-center justify-center font-bold"
                     style={{ background: 'linear-gradient(135deg, #00F5FF, #FF10F0)' }}
                   />
                 </span>
