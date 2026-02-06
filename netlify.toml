@@ -1,9 +1,11 @@
 [build]
-  command = "npm ci && node node_modules/vite/bin/vite.js build"
+  command = "yarn config set ignore-engines true && yarn install && npm run build"
   publish = "dist"
 
 [build.environment]
-  NODE_VERSION = "18"
+  NODE_VERSION = "20.11.0"
+  YARN_FLAGS = "--ignore-engines"
+  NETLIFY_USE_YARN = "true"
 
 # Handle SPA routing - redirect all routes to index.html
 [[redirects]]
